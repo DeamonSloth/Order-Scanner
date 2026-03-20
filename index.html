@@ -4,13 +4,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
   <style>
-    /* Prevent the whole page from bouncing/scrolling */
     html, body { 
       margin: 0; padding: 0; height: 100%; overflow: hidden; 
       font-family: sans-serif; background: #f4f4f9; 
     }
     
-    /* Layout Container to hold everything */
     .app-container {
       display: flex;
       flex-direction: column;
@@ -27,19 +25,20 @@
     video { width: 100%; height: 100%; object-fit: cover; }
     .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
     
-    /* THE SCROLLING PART */
     #items-list { 
       flex-grow: 1; 
       overflow-y: auto; 
-      margin-bottom: 80px; /* Space for the footer */
+      margin-bottom: 140px; /* Space for the stacked footer buttons */
       padding-right: 5px;
     }
 
     .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; min-width: 40px; }
     
-    .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; }
+    .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; z-index: 100; }
     .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+    /* Grey Manual Button */
+    .btn-manual { background: #8e8e93; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
     .btn-finish { background: #34c759; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
     #status { font-weight: bold; color: #007aff; margin-bottom: 5px; text-align: center; }
   </style></head><body>
@@ -69,6 +68,7 @@
   </div>
 
   <div class="footer">
+    <button class="btn-manual" onclick="addNewRow()">+ ADD LINE MANUALLY</button>
     <button class="btn-finish" onclick="saveAndReset()">SAVE & RESET</button>
   </div>
 
@@ -87,7 +87,6 @@
     const ctx = canvas.getContext('2d');
     canvas.width = 400; canvas.height = 100;
     ctx.filter = "grayscale(100%) contrast(150%)";
-    // Using simple draw for stability
     ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
 
     Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
@@ -120,7 +119,6 @@
     div.className = 'item-row';
     div.innerHTML = `<input type="number" class="qty-field" value="1" style="width: 65px;"><input type="text" class="code-field" value="${code}" style="flex: 1;"><button class="btn-del" onclick="this.parentElement.remove()">X</button>`;
     list.appendChild(div);
-    // Auto-scroll to the bottom when a new item is added
     list.scrollTop = list.scrollHeight;
   }
 
@@ -149,9 +147,7 @@
     link.href = canvas.toDataURL();
     link.click();
     
-    // Briefly delay reload to ensure download triggers
     setTimeout(() => location.reload(), 500);
   }
   </script>
-  </body>
-</html>
+</body></html>
