@@ -1,147 +1,157 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CES Warehouse Pro</title>
-    <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
-    <style>
-        body { font-family: sans-serif; margin: 0; padding: 0; background: #f4f4f4; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* FIXED TOP SECTION */
-        #header-section { background: white; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 100; flex-shrink: 0; }
-        .input-stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
-        input { padding: 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; width: 100%; box-sizing: border-box; }
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="UTF-8">
+  <title>Warehouse Order Pro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
+  <style>
+    /* Prevent the whole page from bouncing/scrolling */
+    html, body { 
+      margin: 0; padding: 0; height: 100%; overflow: hidden; 
+      font-family: sans-serif; background: #f4f4f9; 
+    }
+    
+    /* Layout Container to hold everything */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 15px;
+      box-sizing: border-box;
+    }
 
-        #camera-container { position: relative; width: 100%; max-width: 350px; margin: auto; background: #000; border-radius: 8px; overflow: hidden; }
-        video { width: 100%; display: block; }
-        #target-box { position: absolute; top: 50%; left: 50%; width: 75%; height: 45px; border: 3px solid #00ff00; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 15px rgba(0,255,0,0.4); }
+    .header-box { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); flex-shrink: 0; }
+    input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+    
+    .scanner-section { flex-shrink: 0; }
+    .scanner-window { position: relative; width: 100%; height: 160px; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
+    
+    /* THE SCROLLING PART */
+    #items-list { 
+      flex-grow: 1; 
+      overflow-y: auto; 
+      margin-bottom: 80px; /* Space for the footer */
+      padding-right: 5px;
+    }
 
-        #scan-btn { width: 100%; padding: 15px; margin: 8px 0; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
-        
-        .manual-entry { display: flex; gap: 5px; padding: 5px; background: #eee; border-radius: 5px; }
+    .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; min-width: 40px; }
+    
+    .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; }
+    .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+    .btn-finish { background: #34c759; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
+    #status { font-weight: bold; color: #007aff; margin-bottom: 5px; text-align: center; }
+  </style></head><body>
 
-        /* SCROLLING MIDDLE */
-        #scroll-area { flex-grow: 1; overflow-y: auto; padding: 10px; background: #ddd; }
-        .order-item { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .item-info { font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; }
-        .item-actions { display: flex; align-items: center; gap: 10px; }
-        .qty-input { width: 50px; padding: 8px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
-        .delete-btn { background: #dc3545; color: white; border: none; border-radius: 5px; padding: 8px 12px; font-weight: bold; cursor: pointer; }
-
-        /* FIXED BOTTOM */
-        #footer-section { background: white; padding: 10px; border-top: 1px solid #ddd; flex-shrink: 0; text-align: center; }
-        #save-btn { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
-        
-        canvas { display: none; }
-    </style>
-</head>
-<body>
-
-    <div id="header-section">
-        <div class="input-stack">
-            <input type="text" id="customer-name" placeholder="Customer Name">
-            <input type="text" id="job-po" placeholder="Job / PO #">
-        </div>
-        <div id="camera-container">
-            <video id="video" autoplay playsinline></video>
-            <div id="target-box"></div>
-        </div>
-        <button id="scan-btn">SCAN CODE</button>
-        <div class="manual-entry">
-            <input type="number" id="manual-input" placeholder="Manual 8-digit code">
-            <button id="add-manual-btn" style="background:#6c757d; color:white; border:none; padding:10px; border-radius:5px;">ADD +</button>
-        </div>
+  <div class="app-container">
+    <div class="header-box">
+      <input type="text" id="customer" placeholder="Customer Name">
+      <input type="text" id="po" placeholder="Job / PO Number">
     </div>
 
-    <div id="scroll-area">
-        <div id="order-list"></div>
+    <div class="scanner-section">
+      <div id="status">Ready</div>
+      <div class="scanner-window">
+        <video id="v" autoplay playsinline></video>
+        <div class="ocr-target"></div>
+      </div>
+      <button class="btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
     </div>
 
-    <div id="footer-section">
-        <button id="save-btn">FINISH & SAVE ORDER</button>
+    <div id="items-list">
+      <div class="item-row">
+        <input type="number" class="qty-field" value="1" style="width: 65px;">
+        <input type="text" class="code-field" placeholder="Item Code" style="flex: 1;">
+        <button class="btn-del" onclick="this.parentElement.remove()">X</button>
+      </div>
     </div>
+  </div>
 
-    <canvas id="canvas"></canvas>
+  <div class="footer">
+    <button class="btn-finish" onclick="saveAndReset()">SAVE & RESET</button>
+  </div>
 
-    <script>
-        const video = document.getElementById('video');
-        const scanBtn = document.getElementById('scan-btn');
-        const saveBtn = document.getElementById('save-btn');
-        const manualBtn = document.getElementById('add-manual-btn');
-        const manualInput = document.getElementById('manual-input');
-        const orderList = document.getElementById('order-list');
-        const canvas = document.getElementById('canvas');
+  <canvas id="canvas-export" style="display:none;"></canvas>
 
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-            } catch (err) { alert("Camera Error: " + err); }
+  <script>
+  const video = document.getElementById('v');
+  const status = document.getElementById('status');
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => video.srcObject = stream);
+
+  async function captureText() {
+    status.textContent = "SCANNING...";
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 400; canvas.height = 100;
+    ctx.filter = "grayscale(100%) contrast(150%)";
+    // Using simple draw for stability
+    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
+
+    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        let raw = text.replace(/[^0-9-]/g, '').trim();
+        if (raw.length >= 7) {
+          updateLastRow(raw);
+          status.textContent = "SUCCESS!";
+        } else {
+          status.textContent = "RE-TRY (Too Short)";
         }
+    });
+  }
 
-        // FORMATTING LOGIC: This ensures digits show as 1234-5678
-        function addItemToList(code) {
-            let cleanCode = code.toString().replace(/\D/g, ''); // Remove non-numbers
-            let formattedCode = cleanCode;
+  function updateLastRow(code) {
+    const rows = document.querySelectorAll('.item-row');
+    const lastRow = rows[rows.length - 1];
+    if (lastRow) {
+      const codeInput = lastRow.querySelector('.code-field');
+      if (codeInput.value === "") {
+        codeInput.value = code;
+        return;
+      }
+    }
+    addNewRow(code);
+  }
 
-            if (cleanCode.length === 8) {
-                formattedCode = cleanCode.slice(0, 4) + "-" + cleanCode.slice(4);
-            }
+  function addNewRow(code = "") {
+    const list = document.getElementById('items-list');
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.innerHTML = `<input type="number" class="qty-field" value="1" style="width: 65px;"><input type="text" class="code-field" value="${code}" style="flex: 1;"><button class="btn-del" onclick="this.parentElement.remove()">X</button>`;
+    list.appendChild(div);
+    // Auto-scroll to the bottom when a new item is added
+    list.scrollTop = list.scrollHeight;
+  }
 
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'order-item';
-            itemDiv.innerHTML = `
-                <span class="item-info">#${formattedCode}</span>
-                <div class="item-actions">
-                    <span>Qty:</span>
-                    <input type="number" class="qty-input" value="1">
-                    <button class="delete-btn" onclick="this.parentElement.parentElement.remove()">X</button>
-                </div>
-            `;
-            orderList.prepend(itemDiv);
-        }
+  function saveAndReset() {
+    const cust = document.getElementById('customer').value || "Unknown";
+    const po = document.getElementById('po').value || "N/A";
+    const rows = document.querySelectorAll('.item-row');
+    const canvas = document.getElementById('canvas-export');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = 600; 
+    canvas.height = 200 + (rows.length * 50);
+    ctx.fillStyle = "white"; ctx.fillRect(0,0,600,canvas.height);
+    ctx.fillStyle = "black"; ctx.font = "bold 24px sans-serif";
+    ctx.fillText("CUSTOMER: " + cust, 30, 50);
+    ctx.fillText("PO: " + po, 30, 90);
+    ctx.font = "20px monospace";
+    rows.forEach((row, i) => {
+      const q = row.querySelector('.qty-field').value;
+      const c = row.querySelector('.code-field').value;
+      ctx.fillText(`${q} x ${c}`, 30, 150 + (i * 50));
+    });
 
-        manualBtn.onclick = () => {
-            if (manualInput.value) { 
-                addItemToList(manualInput.value); 
-                manualInput.value = ""; 
-            }
-        };
-
-        scanBtn.onclick = async () => {
-            scanBtn.innerText = "READING...";
-            const ctx = canvas.getContext('2d');
-            canvas.width = 600; canvas.height = 150;
-            const sourceX = video.videoWidth * 0.125;
-            const sourceY = (video.videoHeight / 2) - 40;
-            const sourceW = video.videoWidth * 0.75;
-            const sourceH = 80;
-
-            ctx.filter = 'grayscale(100%) contrast(150%)';
-            ctx.drawImage(video, sourceX, sourceY, sourceW, sourceH, 0, 0, canvas.width, canvas.height);
-
-            const result = await Tesseract.recognize(canvas, 'eng');
-            const cleaned = result.data.text.replace(/\D/g, '');
-            const match = cleaned.match(/\d{8}/);
-
-            if (match) {
-                addItemToList(match[0]);
-                scanBtn.innerText = "SUCCESS!";
-            } else {
-                alert("Scan failed. Use Manual Add.");
-            }
-            setTimeout(() => { scanBtn.innerText = "SCAN CODE"; }, 800);
-        };
-
-        saveBtn.onclick = () => {
-            const items = orderList.querySelectorAll('.order-item');
-            if(items.length === 0) return alert("List is empty!");
-            alert("Order Processed!");
-            location.reload();
-        };
-
-        window.onload = startCamera;
-    </script>
-</body>
+    const link = document.createElement('a');
+    link.download = `Order-${cust}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+    
+    // Briefly delay reload to ensure download triggers
+    setTimeout(() => location.reload(), 500);
+  }
+  </script>
+  </body>
 </html>
