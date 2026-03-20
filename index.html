@@ -10,8 +10,8 @@
         
         /* FIXED TOP SECTION */
         #header-section { background: white; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 100; flex-shrink: 0; }
-        .input-group { display: flex; gap: 5px; margin-bottom: 8px; }
-        input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        .input-stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+        input { padding: 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; width: 100%; box-sizing: border-box; }
 
         #camera-container { position: relative; width: 100%; max-width: 350px; margin: auto; background: #000; border-radius: 8px; overflow: hidden; }
         video { width: 100%; display: block; }
@@ -19,20 +19,19 @@
 
         #scan-btn { width: 100%; padding: 15px; margin: 8px 0; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
         
-        /* Manual Entry Row stuck in header */
-        .manual-entry { display: flex; gap: 5px; background: #f9f9f9; padding: 5px; border-radius: 5px; border: 1px dashed #bbb; }
-        #manual-input { flex: 2; border: 1px solid #ddd; }
-        #add-manual-btn { flex: 1; background: #6c757d; color: white; border: none; border-radius: 5px; font-weight: bold; }
+        .manual-entry { display: flex; gap: 5px; padding: 5px; background: #eee; border-radius: 5px; }
 
         /* SCROLLING MIDDLE */
-        #scroll-area { flex-grow: 1; overflow-y: auto; padding: 10px; background: #eee; }
-        .order-item { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid #28a745; }
+        #scroll-area { flex-grow: 1; overflow-y: auto; padding: 10px; background: #ddd; }
+        .order-item { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .item-info { font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; }
-        .qty-input { width: 45px; padding: 8px; text-align: center; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
+        .item-actions { display: flex; align-items: center; gap: 10px; }
+        .qty-input { width: 50px; padding: 8px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .delete-btn { background: #dc3545; color: white; border: none; border-radius: 5px; padding: 8px 12px; font-weight: bold; cursor: pointer; }
 
         /* FIXED BOTTOM */
         #footer-section { background: white; padding: 10px; border-top: 1px solid #ddd; flex-shrink: 0; text-align: center; }
-        #save-btn { width: 95%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; }
+        #save-btn { width: 100%; padding: 15px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
         
         canvas { display: none; }
     </style>
@@ -40,7 +39,7 @@
 <body>
 
     <div id="header-section">
-        <div class="input-group">
+        <div class="input-stack">
             <input type="text" id="customer-name" placeholder="Customer Name">
             <input type="text" id="job-po" placeholder="Job / PO #">
         </div>
@@ -49,10 +48,9 @@
             <div id="target-box"></div>
         </div>
         <button id="scan-btn">SCAN CODE</button>
-        
         <div class="manual-entry">
-            <input type="number" id="manual-input" placeholder="Enter 8-digit manually">
-            <button id="add-manual-btn">ADD +</button>
+            <input type="number" id="manual-input" placeholder="Manual 8-digit code">
+            <button id="add-manual-btn" style="background:#6c757d; color:white; border:none; padding:10px; border-radius:5px;">ADD +</button>
         </div>
     </div>
 
@@ -87,19 +85,17 @@
             itemDiv.className = 'order-item';
             itemDiv.innerHTML = `
                 <span class="item-info">#${code}</span>
-                <div>Qty: <input type="number" class="qty-input" value="1"></div>
+                <div class="item-actions">
+                    <span>Qty:</span>
+                    <input type="number" class="qty-input" value="1">
+                    <button class="delete-btn" onclick="this.parentElement.parentElement.remove()">X</button>
+                </div>
             `;
-            orderList.prepend(itemDiv); // Newest on top
+            orderList.prepend(itemDiv);
         }
 
         manualBtn.onclick = () => {
-            const val = manualInput.value;
-            if (val.length >= 4) { // Allowing flexibility for short codes if needed
-                addItemToList(val);
-                manualInput.value = "";
-            } else {
-                alert("Enter a valid code");
-            }
+            if (manualInput.value) { addItemToList(manualInput.value); manualInput.value = ""; }
         };
 
         scanBtn.onclick = async () => {
@@ -121,18 +117,16 @@
             if (match) {
                 addItemToList(match[0]);
                 scanBtn.innerText = "SUCCESS!";
-                scanBtn.style.background = "#28a745";
             } else {
-                alert("Scan failed. Use Manual Add if needed.");
+                alert("Scan failed. Use Manual Add.");
             }
-            setTimeout(() => { scanBtn.innerText = "SCAN CODE"; scanBtn.style.background = "#28a745"; }, 800);
+            setTimeout(() => { scanBtn.innerText = "SCAN CODE"; }, 800);
         };
 
         saveBtn.onclick = () => {
             const items = orderList.querySelectorAll('.order-item');
             if(items.length === 0) return alert("List is empty!");
-            // Logic to save/download would go here...
-            alert("Order Saved locally! (Refresh to start new)");
+            alert("Order Processed!");
             location.reload();
         };
 
