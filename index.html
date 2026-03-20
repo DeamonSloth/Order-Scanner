@@ -20,15 +20,14 @@
     input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
     
     .scanner-section { flex-shrink: 0; padding: 0 15px; }
-    .scanner-window { position: relative; width: 100%; height: 150px; background: #000; border-radius: 10px; overflow: hidden; }
-    /* Changed to contain to ensure the "lie" between screen and camera is minimized */
+    .scanner-window { position: relative; width: 100%; height: 160px; background: #000; border-radius: 10px; overflow: hidden; }
     video { width: 100%; height: 100%; object-fit: cover; }
-    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); z-index: 5; }
+    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; height: 50px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); z-index: 5; pointer-events: none; }
     
     #items-list { 
       flex: 1;
       overflow-y: auto; 
-      padding: 10px 15px 180px 15px; /* Large bottom padding for footer clearance */
+      padding: 10px 15px 180px 15px;
       -webkit-overflow-scrolling: touch;
     }
 
@@ -85,27 +84,32 @@
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
-    // Determine the actual scale of the video
     const vW = video.videoWidth;
     const vH = video.videoHeight;
     
-    // We want a wide, short box from the dead center
-    // This math ensures we grab exactly what is behind the green target
-    canvas.width = 600; 
-    canvas.height = 150;
+    // We capture a wider area to ensure we don't miss the first/last digit
+    canvas.width = 800; 
+    canvas.height = 200;
     
-    ctx.filter = "grayscale(100%) contrast(150%) brightness(110%)";
+    // Add a white background (OCR likes white borders)
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, 800, 200);
     
-    // Capture the middle 50% of the video width and middle 20% of height
-    const sx = vW * 0.25; 
+    ctx.filter = "grayscale(100%) contrast(180%)";
+    
+    // Adjusted capture coordinates to better match the center "green box"
+    const sx = vW * 0.15; 
     const sy = vH * 0.40;
-    const sWidth = vW * 0.50;
+    const sWidth = vW * 0.70;
     const sHeight = vH * 0.20;
 
-    ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, 600, 150);
+    // Draw the camera frame onto our white-padded canvas
+    ctx.drawImage(video, sx, sy, sWidth, sHeight, 50, 50, 700, 100);
 
-    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
-        // Keeping your original logic exactly as it was
+    // CRITICAL: We tell Tesseract to ONLY look for numbers and dashes
+    Tesseract.recognize(canvas, 'eng', {
+        tessedit_char_whitelist: '0123456789-'
+    }).then(({ data: { text } }) => {
         let raw = text.replace(/[^0-9-]/g, '').trim();
         if (raw.length >= 7) {
           updateLastRow(raw);
@@ -163,4 +167,5 @@
     setTimeout(() => location.reload(), 500);
   }
   </script>
-</body></html>
+  </body>
+</html>
