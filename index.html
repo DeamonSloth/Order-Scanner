@@ -17,6 +17,7 @@
       box-sizing: border-box;
     }
 
+    /* TOP SECTION: Remains fixed at the top */
     .header-box { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); flex-shrink: 0; }
     input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
     
@@ -25,19 +26,21 @@
     video { width: 100%; height: 100%; object-fit: cover; }
     .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
     
+    /* MIDDLE SECTION: This is the only part that scrolls */
     #items-list { 
       flex-grow: 1; 
       overflow-y: auto; 
-      margin-bottom: 140px; /* Space for the stacked footer buttons */
+      margin-bottom: 150px; /* Space for the fixed footer buttons */
       padding-right: 5px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; min-width: 40px; }
     
+    /* BOTTOM SECTION: Remains fixed at the bottom */
     .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; z-index: 100; }
     .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
-    /* Grey Manual Button */
     .btn-manual { background: #8e8e93; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
     .btn-finish { background: #34c759; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
     #status { font-weight: bold; color: #007aff; margin-bottom: 5px; text-align: center; }
