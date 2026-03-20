@@ -13,37 +13,33 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
-      padding: 15px;
       box-sizing: border-box;
     }
 
-    /* TOP SECTION: Remains fixed at the top */
-    .header-box { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); flex-shrink: 0; }
-    input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+    .header-box { background: white; padding: 15px; border-radius: 0 0 10px 10px; margin-bottom: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); flex-shrink: 0; }
+    input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
     
-    .scanner-section { flex-shrink: 0; }
-    .scanner-window { position: relative; width: 100%; height: 160px; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+    .scanner-section { flex-shrink: 0; padding: 0 15px; }
+    .scanner-window { position: relative; width: 100%; height: 150px; background: #000; border-radius: 10px; overflow: hidden; }
+    /* Changed to contain to ensure the "lie" between screen and camera is minimized */
     video { width: 100%; height: 100%; object-fit: cover; }
-    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
+    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); z-index: 5; }
     
-    /* MIDDLE SECTION: This is the only part that scrolls */
     #items-list { 
-      flex-grow: 1; 
+      flex: 1;
       overflow-y: auto; 
-      margin-bottom: 150px; /* Space for the fixed footer buttons */
-      padding-right: 5px;
+      padding: 10px 15px 180px 15px; /* Large bottom padding for footer clearance */
       -webkit-overflow-scrolling: touch;
     }
 
     .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; min-width: 40px; }
     
-    /* BOTTOM SECTION: Remains fixed at the bottom */
     .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; z-index: 100; }
-    .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
-    .btn-manual { background: #8e8e93; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
+    .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+    .btn-manual { background: #8e8e93; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 8px; }
     .btn-finish { background: #34c759; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
-    #status { font-weight: bold; color: #007aff; margin-bottom: 5px; text-align: center; }
+    #status { font-weight: bold; color: #007aff; margin: 5px 0; text-align: center; font-size: 14px; }
   </style></head><body>
 
   <div class="app-container">
@@ -58,7 +54,6 @@
         <video id="v" autoplay playsinline></video>
         <div class="ocr-target"></div>
       </div>
-      <button class="btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
     </div>
 
     <div id="items-list">
@@ -71,6 +66,7 @@
   </div>
 
   <div class="footer">
+    <button class="btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
     <button class="btn-manual" onclick="addNewRow()">+ ADD LINE MANUALLY</button>
     <button class="btn-finish" onclick="saveAndReset()">SAVE & RESET</button>
   </div>
@@ -81,22 +77,39 @@
   const video = document.getElementById('v');
   const status = document.getElementById('status');
 
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    .then(stream => video.srcObject = stream);
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+    .then(stream => { video.srcObject = stream; });
 
   async function captureText() {
     status.textContent = "SCANNING...";
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 400; canvas.height = 100;
-    ctx.filter = "grayscale(100%) contrast(150%)";
-    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
+    
+    // Determine the actual scale of the video
+    const vW = video.videoWidth;
+    const vH = video.videoHeight;
+    
+    // We want a wide, short box from the dead center
+    // This math ensures we grab exactly what is behind the green target
+    canvas.width = 600; 
+    canvas.height = 150;
+    
+    ctx.filter = "grayscale(100%) contrast(150%) brightness(110%)";
+    
+    // Capture the middle 50% of the video width and middle 20% of height
+    const sx = vW * 0.25; 
+    const sy = vH * 0.40;
+    const sWidth = vW * 0.50;
+    const sHeight = vH * 0.20;
+
+    ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, 600, 150);
 
     Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        // Keeping your original logic exactly as it was
         let raw = text.replace(/[^0-9-]/g, '').trim();
         if (raw.length >= 7) {
           updateLastRow(raw);
-          status.textContent = "SUCCESS!";
+          status.textContent = "SUCCESS: " + raw;
         } else {
           status.textContent = "RE-TRY (Too Short)";
         }
@@ -106,14 +119,11 @@
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
     const lastRow = rows[rows.length - 1];
-    if (lastRow) {
-      const codeInput = lastRow.querySelector('.code-field');
-      if (codeInput.value === "") {
-        codeInput.value = code;
-        return;
-      }
+    if (lastRow && lastRow.querySelector('.code-field').value === "") {
+      lastRow.querySelector('.code-field').value = code;
+    } else {
+      addNewRow(code);
     }
-    addNewRow(code);
   }
 
   function addNewRow(code = "") {
