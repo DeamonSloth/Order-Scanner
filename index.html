@@ -80,11 +80,19 @@
             } catch (err) { alert("Camera Error: " + err); }
         }
 
+        // FORMATTING LOGIC: This ensures digits show as 1234-5678
         function addItemToList(code) {
+            let cleanCode = code.toString().replace(/\D/g, ''); // Remove non-numbers
+            let formattedCode = cleanCode;
+
+            if (cleanCode.length === 8) {
+                formattedCode = cleanCode.slice(0, 4) + "-" + cleanCode.slice(4);
+            }
+
             const itemDiv = document.createElement('div');
             itemDiv.className = 'order-item';
             itemDiv.innerHTML = `
-                <span class="item-info">#${code}</span>
+                <span class="item-info">#${formattedCode}</span>
                 <div class="item-actions">
                     <span>Qty:</span>
                     <input type="number" class="qty-input" value="1">
@@ -95,7 +103,10 @@
         }
 
         manualBtn.onclick = () => {
-            if (manualInput.value) { addItemToList(manualInput.value); manualInput.value = ""; }
+            if (manualInput.value) { 
+                addItemToList(manualInput.value); 
+                manualInput.value = ""; 
+            }
         };
 
         scanBtn.onclick = async () => {
@@ -110,7 +121,7 @@
             ctx.filter = 'grayscale(100%) contrast(150%)';
             ctx.drawImage(video, sourceX, sourceY, sourceW, sourceH, 0, 0, canvas.width, canvas.height);
 
-            const result = await Tesseract.recognize(canvas, 'eng', { tessedit_char_whitelist: '0123456789' });
+            const result = await Tesseract.recognize(canvas, 'eng');
             const cleaned = result.data.text.replace(/\D/g, '');
             const match = cleaned.match(/\d{8}/);
 
