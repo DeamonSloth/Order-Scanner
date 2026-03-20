@@ -6,16 +6,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
   <style>
-    body { margin: 0; font-family: sans-serif; background: #f4f4f9; padding: 15px; padding-bottom: 120px; }
+    body { margin: 0; font-family: sans-serif; background: #f4f4f9; padding: 15px; padding-bottom: 180px; } /* Increased padding for stacked buttons */
     .header-box { background: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
     .scanner-window { position: relative; width: 100%; height: 200px; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; }
     video { width: 100%; height: 100%; object-fit: cover; }
     .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 40px; border: 3px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
-    .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; }
-    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; }
-    .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 20px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; }
+    .item-row { display: flex; gap: 10px; margin-bottom: 10px; background: white; padding: 10px; border-radius: 8px; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 5px; padding: 10px; font-weight: bold; min-width: 40px; }
+    
+    .footer { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #ddd; text-align: center; box-sizing: border-box; z-index: 100; }
     .btn-scan { background: #007aff; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+    
+    /* Added Style for Manual Button */
+    .btn-manual { background: #8e8e93; color: white; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
+    
     .btn-finish { background: #34c759; color: white; width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
     #status { font-weight: bold; color: #007aff; margin-bottom: 5px; }
   </style>
@@ -44,6 +49,7 @@
   </div>
 
   <div class="footer">
+    <button class="btn-manual" onclick="addNewRow()">+ ADD LINE MANUALLY</button>
     <button class="btn-finish" onclick="saveAndReset()">SAVE & RESET</button>
   </div>
 
@@ -78,12 +84,14 @@
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
     const lastRow = rows[rows.length - 1];
-    const codeInput = lastRow.querySelector('.code-field');
-    if (codeInput.value === "") {
-      codeInput.value = code;
-    } else {
-      addNewRow(code);
+    if (lastRow) {
+      const codeInput = lastRow.querySelector('.code-field');
+      if (codeInput.value === "") {
+        codeInput.value = code;
+        return;
+      }
     }
+    addNewRow(code);
   }
 
   function addNewRow(code = "") {
@@ -115,7 +123,9 @@
     link.download = `Order-${cust}.png`;
     link.href = canvas.toDataURL();
     link.click();
-    location.reload();
+    
+    // Slight delay before reload to ensure download triggers
+    setTimeout(() => location.reload(), 500);
   }
 </script>
 </body>
