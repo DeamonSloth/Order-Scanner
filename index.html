@@ -5,24 +5,29 @@
   <title>Warehouse Order Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
-  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
     .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
     label { display: block; font-size: 10px; font-weight: bold; color: #888; margin-bottom: 4px; text-transform: uppercase; }
     input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fafafa; }
+    
     .scanner-window { position: relative; width: 100%; height: 140px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
-    video { width: 100%; height: 100%; object-fit: cover; background: #000; }
-    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 180px; height: 40px; border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); border-radius: 4px; pointer-events: none; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .ocr-target { 
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+        width: 180px; height: 40px; 
+        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); 
+        border-radius: 4px; pointer-events: none; 
+    }
+
     .item-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; }
+    
     .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
     .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; }
     .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
     .btn-finish { background: #34c759; color: white; width: 100%; height: 65px; border-bottom: 5px solid #248f40; }
     #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; }
-    #startCameraBtn { background:#0a84ff; color:#fff; border:none; padding:12px 16px; border-radius:8px; font-weight:bold; cursor:pointer; margin-bottom:8px; width:100%; }
-    .hint { font-size:13px; color:#666; margin-bottom:8px; text-align:center; }
   </style>
 </head>
 <body>
@@ -39,16 +44,12 @@
   </div>
 
   <div id="status">Ready</div>
-
-  <div class="hint" id="permissionHint">Tap <strong>Start Camera</strong> to allow camera access.</div>
-  <button id="startCameraBtn">Start Camera</button>
-
-  <div class="scanner-window" aria-hidden="false">
-    <video id="v" autoplay playsinline muted></video>
+  <div class="scanner-window">
+    <video id="v" autoplay playsinline></video>
     <div class="ocr-target"></div>
   </div>
 
-  <button class="btn btn-scan" id="scanBtn">📸 SCAN (BARCODE → OCR)</button>
+  <button class="btn btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
 
   <div id="items-list">
     <div class="item-row">
@@ -68,201 +69,31 @@
 
 <script>
   const video = document.getElementById('v');
-  const statusEl = document.getElementById('status');
-  const startBtn = document.getElementById('startCameraBtn');
-  const permissionHint = document.getElementById('permissionHint');
-  let stream = null;
+  const status = document.getElementById('status');
 
-  function setStatus(msg, color = '#007aff') {
-    statusEl.textContent = msg;
-    statusEl.style.color = color;
-  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } })
+    .then(stream => video.srcObject = stream);
 
-  // Check secure context and show helpful message
-  function checkSecureContext() {
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-      setStatus('Page must be served over HTTPS for camera access', '#ff3b30');
-      permissionHint.innerHTML = 'Camera requires HTTPS. Serve the page over HTTPS or use localhost for testing.';
-      startBtn.disabled = true;
-      return false;
-    }
-    return true;
-  }
-
-  // Query permission state (best-effort; not supported everywhere)
-  async function getPermissionState() {
-    if (!navigator.permissions) return null;
-    try {
-      const p = await navigator.permissions.query({ name: 'camera' });
-      return p.state; // 'granted' | 'prompt' | 'denied'
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // Start camera on user gesture (guarantees prompt)
-  async function startCamera() {
-    if (!checkSecureContext()) return;
-    setStatus('Requesting camera...');
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
-      video.srcObject = stream;
-      await video.play();
-      setStatus('Camera ready', '#34c759');
-      permissionHint.style.display = 'none';
-      startBtn.style.display = 'none';
-    } catch (err) {
-      console.error('getUserMedia error', err);
-      handleCameraError(err);
-    }
-  }
-
-  function handleCameraError(err) {
-    // Friendly messages for common cases
-    if (err && err.name === 'NotAllowedError') {
-      setStatus('Camera permission denied', '#ff3b30');
-      permissionHint.innerHTML = 'Camera access was blocked. Please enable camera permission in your browser settings for this site.';
-    } else if (err && err.name === 'NotFoundError') {
-      setStatus('No camera found', '#ff3b30');
-      permissionHint.innerHTML = 'No camera device was found on this device.';
-    } else if (err && err.name === 'NotReadableError') {
-      setStatus('Camera in use by another app', '#ff3b30');
-      permissionHint.innerHTML = 'Close other apps using the camera and try again.';
-    } else {
-      setStatus('Camera error', '#ff3b30');
-      permissionHint.innerHTML = 'Unexpected camera error. Check console for details.';
-    }
-  }
-
-  // Stop camera (cleanup)
-  function stopCamera() {
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
-      video.srcObject = null;
-      setStatus('Camera stopped');
-      startBtn.style.display = 'block';
-      permissionHint.style.display = 'block';
-    }
-  }
-
-  // Wire start button
-  startBtn.addEventListener('click', async () => {
-    // If permission already denied, show instructions
-    const state = await getPermissionState();
-    if (state === 'denied') {
-      setStatus('Camera permission is blocked', '#ff3b30');
-      permissionHint.innerHTML = 'Camera permission is blocked. Open browser settings and allow camera for this site, then reload.';
-      return;
-    }
-    await startCamera();
-  });
-
-  // If page loaded and permission already granted, auto-start (optional)
-  (async function autoStartIfGranted() {
-    if (!checkSecureContext()) return;
-    const state = await getPermissionState();
-    if (state === 'granted') {
-      // start automatically because user already allowed camera
-      startBtn.style.display = 'none';
-      permissionHint.style.display = 'none';
-      startCamera();
-    }
-  })();
-
-  /********* Existing scan flow (unchanged) *********/
-  const ROI = { w: 180, h: 40 };
-
-  function captureRoiCanvas() {
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-    const roiW = Math.min(ROI.w, vw);
-    const roiH = Math.min(ROI.h, vh);
-    const sx = Math.max(0, Math.floor((vw - roiW) / 2));
-    const sy = Math.max(0, Math.floor((vh - roiH) / 2));
+  async function captureText() {
+    status.textContent = "SEARCHING...";
     const canvas = document.createElement('canvas');
-    const upscale = 3;
-    canvas.width = roiW * upscale;
-    canvas.height = roiH * upscale;
     const ctx = canvas.getContext('2d');
-    ctx.filter = 'grayscale(100%) contrast(150%)';
-    ctx.drawImage(video, sx, sy, roiW, roiH, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  }
+    canvas.width = 400; canvas.height = 100;
+    ctx.filter = "grayscale(100%) contrast(150%)";
+    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
 
-  async function tryNativeBarcodeDetector(timeoutMs = 1200) {
-    if (!('BarcodeDetector' in window)) return null;
-    try {
-      const supported = await BarcodeDetector.getSupportedFormats();
-      const want = supported.includes('code_128') ? ['code_128'] : supported;
-      const detector = new BarcodeDetector({ formats: want });
-      const canvas = captureRoiCanvas();
-      const detectPromise = detector.detect(canvas).then(results => {
-        if (results && results.length > 0) return results[0].rawValue || results[0].raw || null;
-        return null;
-      }).catch(() => null);
-      return await promiseTimeout(detectPromise, timeoutMs, null);
-    } catch (err) {
-      return null;
-    }
-  }
-
-  async function tryZXingDecode(timeoutMs = 2000) {
-    // attempt to use ZXing UMD reader
-    let reader = null;
-    try {
-      if (window.BrowserMultiFormatReader) reader = new window.BrowserMultiFormatReader();
-      else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) reader = new window.ZXing.BrowserMultiFormatReader();
-    } catch (e) { reader = null; }
-    if (!reader) return null;
-    const canvas = captureRoiCanvas();
-    const dataUrl = canvas.toDataURL('image/png');
-    const decodePromise = (async () => {
-      try {
-        if (typeof reader.decodeFromImage === 'function') {
-          const img = new Image();
-          img.src = dataUrl;
-          await img.decode().catch(()=>{});
-          const result = await reader.decodeFromImage(img);
-          return result?.text || result?.getText?.() || null;
+    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        let raw = text.replace(/[^0-9-]/g, '').trim();
+        let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
+        if (match) {
+          updateLastRow(match[0]);
+          status.textContent = "SUCCESS: " + match[0];
+          status.style.color = "#34c759";
+        } else {
+          status.textContent = "RE-TRY: ALIGN BOX";
+          status.style.color = "#ff3b30";
         }
-        if (typeof reader.decodeFromImageUrl === 'function') {
-          const result = await reader.decodeFromImageUrl(undefined, dataUrl);
-          return result?.text || result?.getText?.() || null;
-        }
-        if (typeof reader.decodeFromCanvas === 'function') {
-          const result = await reader.decodeFromCanvas(canvas);
-          return result?.text || result?.getText?.() || null;
-        }
-        return null;
-      } catch (err) {
-        return null;
-      }
-    })();
-    return await promiseTimeout(decodePromise, timeoutMs, null);
-  }
-
-  function promiseTimeout(promise, ms, fallback) {
-    let id;
-    const timeout = new Promise(resolve => { id = setTimeout(() => resolve(fallback), ms); });
-    return Promise.race([promise, timeout]).then(result => { clearTimeout(id); return result; });
-  }
-
-  async function runExistingOCR() {
-    const canvas = captureRoiCanvas();
-    try {
-      const { data: { text } } = await Tesseract.recognize(canvas, 'eng', { logger: m => {} });
-      let raw = (text || '').replace(/[^0-9-]/g, '').trim();
-      let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
-      if (match) {
-        let code = match[0];
-        if (/^\d{8}$/.test(code)) code = code.slice(0,4) + '-' + code.slice(4);
-        return code;
-      }
-      return null;
-    } catch (err) {
-      return null;
-    }
+    });
   }
 
   function updateLastRow(code) {
@@ -272,29 +103,6 @@
     if (codeInput.value === "") { codeInput.value = code; } else { addNewRow(code); }
   }
 
-  async function scanFlow() {
-    if (!stream) {
-      setStatus('Start camera first', '#ff3b30');
-      return;
-    }
-    setStatus('Scanning...');
-    try {
-      const nativeResult = await tryNativeBarcodeDetector();
-      if (nativeResult) { setStatus('Barcode: ' + nativeResult, '#34c759'); updateLastRow(nativeResult); return; }
-    } catch (e) {}
-    try {
-      const zxingResult = await tryZXingDecode();
-      if (zxingResult) { setStatus('Barcode: ' + zxingResult, '#34c759'); updateLastRow(zxingResult); return; }
-    } catch (e) {}
-    setStatus('Barcode not found — running OCR', '#ff9500');
-    const ocrResult = await runExistingOCR();
-    if (ocrResult) { setStatus('OCR: ' + ocrResult, '#34c759'); updateLastRow(ocrResult); return; }
-    setStatus('RE-TRY: ALIGN BOX', '#ff3b30');
-  }
-
-  document.getElementById('scanBtn').addEventListener('click', scanFlow);
-
-  // Existing helpers
   function addNewRow(code = "") {
     const div = document.createElement('div');
     div.className = 'item-row';
@@ -320,21 +128,15 @@
     rows.forEach((row, i) => {
       const q = row.querySelector('.qty-field').value;
       const c = row.querySelector('.code-field').value;
-      if (c) ctx.fillText(`${String(q).padStart(2, '0')} PCS   -   ${c}`, 40, 300 + (i * 60));
+      if (c) ctx.fillText(`${q.padStart(2, '0')} PCS   -   ${c}`, 40, 300 + (i * 60));
     });
     const link = document.createElement('a');
     link.download = `${cust}-${po}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
     alert("ORDER SAVED!");
-    location.reload();
+    location.reload(); // Simplest reset
   }
-
-  window.addNewRow = addNewRow;
-  window.saveAndReset = saveAndReset;
-
-  // Optional: stop camera when leaving page
-  window.addEventListener('beforeunload', stopCamera);
 </script>
 </body>
 </html>
