@@ -4,25 +4,27 @@
   <meta charset="UTF-8" />
   <title>Warehouse Order Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <!-- OCR (existing) -->
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
+
+  <!-- ZXing JS fallback (open source) -->
+  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
     .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
     label { display: block; font-size: 10px; font-weight: bold; color: #888; margin-bottom: 4px; text-transform: uppercase; }
     input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fafafa; }
-    
     .scanner-window { position: relative; width: 100%; height: 140px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
     video { width: 100%; height: 100%; object-fit: cover; }
-    .ocr-target { 
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-        width: 180px; height: 40px; 
-        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); 
-        border-radius: 4px; pointer-events: none; 
+    .ocr-target {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 180px; height: 40px;
+        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7);
+        border-radius: 4px; pointer-events: none;
     }
-
     .item-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; }
-    
     .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
     .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; }
     .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
@@ -49,7 +51,7 @@
     <div class="ocr-target"></div>
   </div>
 
-  <button class="btn btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
+  <button class="btn btn-scan" id="scanBtn">📸 SCAN (BARCODE → OCR)</button>
 
   <div id="items-list">
     <div class="item-row">
@@ -68,34 +70,254 @@
   <canvas id="canvas-export" style="display:none;"></canvas>
 
 <script>
+  /************************************************************************
+   * Overview
+   * - This updates your app to try barcode scanning first (free path):
+   *   1) Native BarcodeDetector (if available and supports Code 128)
+   *   2) ZXing JS fallback (open-source)
+   *   3) Tesseract OCR fallback (your existing flow)
+   *
+   * Notes:
+   * - No external paid license required.
+   * - The code preserves your existing OCR function and UI.
+   ************************************************************************/
+
   const video = document.getElementById('v');
-  const status = document.getElementById('status');
+  const statusEl = document.getElementById('status');
+  let stream = null;
 
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } })
-    .then(stream => video.srcObject = stream);
+  // Start camera on load
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } });
+      video.srcObject = stream;
+      await video.play();
+      setStatus('Camera ready');
+    } catch (err) {
+      console.error('Camera error', err);
+      setStatus('Camera error');
+    }
+  }
+  startCamera();
 
-  async function captureText() {
-    status.textContent = "SEARCHING...";
+  function setStatus(msg, color = '#007aff') {
+    statusEl.textContent = msg;
+    statusEl.style.color = color;
+  }
+
+  // ROI settings (matches the green box in UI)
+  const ROI = { w: 180, h: 40 }; // pixels in UI; we'll map to video pixels dynamically
+
+  // Utility: capture ROI from video into a canvas and return the canvas
+  function captureRoiCanvas() {
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 720;
+    // center ROI in video coordinates
+    const roiW = Math.min(ROI.w, vw);
+    const roiH = Math.min(ROI.h, vh);
+    const sx = Math.max(0, Math.floor((vw - roiW) / 2));
+    const sy = Math.max(0, Math.floor((vh - roiH) / 2));
     const canvas = document.createElement('canvas');
+    // upscale the ROI to improve decoding (helps ZXing/Tesseract)
+    const upscale = 3;
+    canvas.width = roiW * upscale;
+    canvas.height = roiH * upscale;
     const ctx = canvas.getContext('2d');
-    canvas.width = 400; canvas.height = 100;
-    ctx.filter = "grayscale(100%) contrast(150%)";
-    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
+    // apply contrast filter to help detection
+    ctx.filter = 'grayscale(100%) contrast(150%)';
+    ctx.drawImage(video, sx, sy, roiW, roiH, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
 
-    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
-        let raw = text.replace(/[^0-9-]/g, '').trim();
-        let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
-        if (match) {
-          updateLastRow(match[0]);
-          status.textContent = "SUCCESS: " + match[0];
-          status.style.color = "#34c759";
-        } else {
-          status.textContent = "RE-TRY: ALIGN BOX";
-          status.style.color = "#ff3b30";
+  // Primary scan flow: try barcode-first, then OCR fallback
+  async function scanFlow() {
+    setStatus('Scanning...');
+    // 1) Try native BarcodeDetector if available
+    try {
+      const nativeResult = await tryNativeBarcodeDetector();
+      if (nativeResult) {
+        setStatus('Barcode: ' + nativeResult, '#34c759');
+        updateLastRow(nativeResult);
+        return;
+      }
+    } catch (e) {
+      console.warn('Native detector error', e);
+    }
+
+    // 2) Try ZXing JS fallback
+    try {
+      const zxingResult = await tryZXingDecode();
+      if (zxingResult) {
+        setStatus('Barcode: ' + zxingResult, '#34c759');
+        updateLastRow(zxingResult);
+        return;
+      }
+    } catch (e) {
+      console.warn('ZXing decode error', e);
+    }
+
+    // 3) Fallback to existing OCR
+    try {
+      setStatus('Barcode not found — running OCR', '#ff9500');
+      const ocrResult = await runExistingOCR();
+      if (ocrResult) {
+        setStatus('OCR: ' + ocrResult, '#34c759');
+        updateLastRow(ocrResult);
+        return;
+      } else {
+        setStatus('RE-TRY: ALIGN BOX', '#ff3b30');
+      }
+    } catch (e) {
+      console.error('OCR error', e);
+      setStatus('OCR error', '#ff3b30');
+    }
+  }
+
+  // Native BarcodeDetector attempt
+  async function tryNativeBarcodeDetector(timeoutMs = 1200) {
+    if (!('BarcodeDetector' in window)) return null;
+    // check supported formats
+    try {
+      const supported = await BarcodeDetector.getSupportedFormats();
+      // prefer code_128; if not present, still try common formats
+      const want = supported.includes('code_128') ? ['code_128'] : supported;
+      const detector = new BarcodeDetector({ formats: want });
+      const canvas = captureRoiCanvas();
+      // run detect with timeout
+      const detectPromise = detector.detect(canvas).then(results => {
+        if (results && results.length > 0) {
+          // return first barcode rawValue or raw text
+          return results[0].rawValue || results[0].raw || null;
         }
+        return null;
+      }).catch(err => {
+        console.warn('BarcodeDetector.detect failed', err);
+        return null;
+      });
+
+      return await promiseTimeout(detectPromise, timeoutMs, null);
+    } catch (err) {
+      console.warn('BarcodeDetector not usable', err);
+      return null;
+    }
+  }
+
+  // ZXing JS fallback attempt
+  async function tryZXingDecode(timeoutMs = 2000) {
+    // ZXing UMD exposes ZXingBrowser or ZXing namespace depending on version
+    const ZX = window.ZXing || window.ZXingBrowser || window.ZXingJs || window.ZXingLibrary || window.ZXing;
+    // The unpkg UMD exposes ZXingBrowser or ZXing depending on build; try common constructors
+    let reader = null;
+    try {
+      if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
+        reader = new window.ZXing.BrowserMultiFormatReader();
+      } else if (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader) {
+        reader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      } else if (window.ZXing && window.ZXing.BrowserBarcodeReader) {
+        reader = new window.ZXing.BrowserBarcodeReader();
+      } else if (window.ZXing && window.ZXing.BrowserCodeReader) {
+        reader = new window.ZXing.BrowserCodeReader();
+      } else if (window.ZXing) {
+        // try generic
+        reader = new window.ZXing.BrowserMultiFormatReader?.() || new window.ZXing.BrowserBarcodeReader?.();
+      }
+    } catch (e) {
+      console.warn('ZXing reader init failed', e);
+      reader = null;
+    }
+
+    if (!reader) {
+      // As a last resort, try the known UMD name
+      if (window.BrowserMultiFormatReader) {
+        reader = new window.BrowserMultiFormatReader();
+      } else {
+        return null;
+      }
+    }
+
+    // Capture ROI to data URL and ask ZXing to decode from image
+    const canvas = captureRoiCanvas();
+    const dataUrl = canvas.toDataURL('image/png');
+
+    // ZXing's UMD provides decodeFromImage or decodeFromImageUrl in many builds
+    const decodePromise = (async () => {
+      try {
+        // try decodeFromImage (some builds)
+        if (typeof reader.decodeFromImage === 'function') {
+          // decodeFromImage(imageElementIdOrElement)
+          // create an Image element
+          const img = new Image();
+          img.src = dataUrl;
+          await img.decode().catch(()=>{}); // ensure loaded
+          const result = await reader.decodeFromImage(img);
+          return result?.text || result?.getText?.() || null;
+        }
+
+        // try decodeFromImageUrl (some builds)
+        if (typeof reader.decodeFromImageUrl === 'function') {
+          const result = await reader.decodeFromImageUrl(undefined, dataUrl);
+          return result?.text || result?.getText?.() || null;
+        }
+
+        // try decodeFromCanvas (some builds expose decodeFromCanvas)
+        if (typeof reader.decodeFromCanvas === 'function') {
+          const result = await reader.decodeFromCanvas(canvas);
+          return result?.text || result?.getText?.() || null;
+        }
+
+        // fallback: use decodeOnce from BrowserBarcodeReader if available
+        if (typeof reader.decodeOnce === 'function') {
+          const result = await reader.decodeOnce(dataUrl);
+          return result?.text || result?.getText?.() || null;
+        }
+
+        // If none of the above exist, try the low-level ZXing decode via BinaryBitmap (advanced)
+        // Skip complex path to keep fallback simple; return null
+        return null;
+      } catch (err) {
+        console.warn('ZXing decode error', err);
+        return null;
+      }
+    })();
+
+    return await promiseTimeout(decodePromise, timeoutMs, null);
+  }
+
+  // Utility: promise with timeout
+  function promiseTimeout(promise, ms, fallback) {
+    let id;
+    const timeout = new Promise(resolve => {
+      id = setTimeout(() => resolve(fallback), ms);
+    });
+    return Promise.race([promise, timeout]).then(result => {
+      clearTimeout(id);
+      return result;
     });
   }
 
+  // Existing OCR flow (keeps your Tesseract usage)
+  async function runExistingOCR() {
+    // capture ROI to canvas (same as before)
+    const canvas = captureRoiCanvas();
+    // Tesseract expects an element or blob; pass canvas
+    try {
+      const { data: { text } } = await Tesseract.recognize(canvas, 'eng', { logger: m => {} });
+      let raw = (text || '').replace(/[^0-9-]/g, '').trim();
+      let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
+      if (match) {
+        // normalize to 0000-0000 if needed
+        let code = match[0];
+        if (/^\d{8}$/.test(code)) code = code.slice(0,4) + '-' + code.slice(4);
+        return code;
+      }
+      return null;
+    } catch (err) {
+      console.error('Tesseract error', err);
+      return null;
+    }
+  }
+
+  // Update UI row with scanned code
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
     const lastRow = rows[rows.length - 1];
@@ -103,6 +325,12 @@
     if (codeInput.value === "") { codeInput.value = code; } else { addNewRow(code); }
   }
 
+  // Hook up scan button
+  document.getElementById('scanBtn').addEventListener('click', async () => {
+    await scanFlow();
+  });
+
+  // Existing helper functions (unchanged except minor reuse)
   function addNewRow(code = "") {
     const div = document.createElement('div');
     div.className = 'item-row';
@@ -128,7 +356,7 @@
     rows.forEach((row, i) => {
       const q = row.querySelector('.qty-field').value;
       const c = row.querySelector('.code-field').value;
-      if (c) ctx.fillText(`${q.padStart(2, '0')} PCS   -   ${c}`, 40, 300 + (i * 60));
+      if (c) ctx.fillText(`${String(q).padStart(2, '0')} PCS   -   ${c}`, 40, 300 + (i * 60));
     });
     const link = document.createElement('a');
     link.download = `${cust}-${po}.png`;
@@ -137,6 +365,23 @@
     alert("ORDER SAVED!");
     location.reload(); // Simplest reset
   }
+
+  // Expose functions for inline onclick handlers
+  window.addNewRow = addNewRow;
+  window.saveAndReset = saveAndReset;
+
+  // Optional: warm up ZXing reader in background to reduce first-scan latency
+  (function warmUpZXing() {
+    try {
+      if (window.BrowserMultiFormatReader) {
+        // instantiate once
+        new window.BrowserMultiFormatReader();
+      } else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
+        new window.ZXing.BrowserMultiFormatReader();
+      }
+    } catch (e) { /* ignore */ }
+  })();
+
 </script>
 </body>
 </html>
