@@ -4,25 +4,16 @@
   <meta charset="UTF-8" />
   <title>Warehouse Order Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <!-- OCR (existing) -->
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
-
-  <!-- ZXing JS fallback (open source) -->
   <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
-
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
     .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
     label { display: block; font-size: 10px; font-weight: bold; color: #888; margin-bottom: 4px; text-transform: uppercase; }
     input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fafafa; }
     .scanner-window { position: relative; width: 100%; height: 140px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
-    video { width: 100%; height: 100%; object-fit: cover; }
-    .ocr-target {
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 180px; height: 40px;
-        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7);
-        border-radius: 4px; pointer-events: none;
-    }
+    video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+    .ocr-target { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 180px; height: 40px; border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); border-radius: 4px; pointer-events: none; }
     .item-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
     .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; }
     .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
@@ -30,6 +21,8 @@
     .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
     .btn-finish { background: #34c759; color: white; width: 100%; height: 65px; border-bottom: 5px solid #248f40; }
     #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; }
+    #startCameraBtn { background:#0a84ff; color:#fff; border:none; padding:12px 16px; border-radius:8px; font-weight:bold; cursor:pointer; margin-bottom:8px; width:100%; }
+    .hint { font-size:13px; color:#666; margin-bottom:8px; text-align:center; }
   </style>
 </head>
 <body>
@@ -46,8 +39,12 @@
   </div>
 
   <div id="status">Ready</div>
-  <div class="scanner-window">
-    <video id="v" autoplay playsinline></video>
+
+  <div class="hint" id="permissionHint">Tap <strong>Start Camera</strong> to allow camera access.</div>
+  <button id="startCameraBtn">Start Camera</button>
+
+  <div class="scanner-window" aria-hidden="false">
+    <video id="v" autoplay playsinline muted></video>
     <div class="ocr-target"></div>
   </div>
 
@@ -70,254 +67,204 @@
   <canvas id="canvas-export" style="display:none;"></canvas>
 
 <script>
-  /************************************************************************
-   * Overview
-   * - This updates your app to try barcode scanning first (free path):
-   *   1) Native BarcodeDetector (if available and supports Code 128)
-   *   2) ZXing JS fallback (open-source)
-   *   3) Tesseract OCR fallback (your existing flow)
-   *
-   * Notes:
-   * - No external paid license required.
-   * - The code preserves your existing OCR function and UI.
-   ************************************************************************/
-
   const video = document.getElementById('v');
   const statusEl = document.getElementById('status');
+  const startBtn = document.getElementById('startCameraBtn');
+  const permissionHint = document.getElementById('permissionHint');
   let stream = null;
-
-  // Start camera on load
-  async function startCamera() {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } });
-      video.srcObject = stream;
-      await video.play();
-      setStatus('Camera ready');
-    } catch (err) {
-      console.error('Camera error', err);
-      setStatus('Camera error');
-    }
-  }
-  startCamera();
 
   function setStatus(msg, color = '#007aff') {
     statusEl.textContent = msg;
     statusEl.style.color = color;
   }
 
-  // ROI settings (matches the green box in UI)
-  const ROI = { w: 180, h: 40 }; // pixels in UI; we'll map to video pixels dynamically
+  // Check secure context and show helpful message
+  function checkSecureContext() {
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      setStatus('Page must be served over HTTPS for camera access', '#ff3b30');
+      permissionHint.innerHTML = 'Camera requires HTTPS. Serve the page over HTTPS or use localhost for testing.';
+      startBtn.disabled = true;
+      return false;
+    }
+    return true;
+  }
 
-  // Utility: capture ROI from video into a canvas and return the canvas
+  // Query permission state (best-effort; not supported everywhere)
+  async function getPermissionState() {
+    if (!navigator.permissions) return null;
+    try {
+      const p = await navigator.permissions.query({ name: 'camera' });
+      return p.state; // 'granted' | 'prompt' | 'denied'
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Start camera on user gesture (guarantees prompt)
+  async function startCamera() {
+    if (!checkSecureContext()) return;
+    setStatus('Requesting camera...');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      setStatus('Camera ready', '#34c759');
+      permissionHint.style.display = 'none';
+      startBtn.style.display = 'none';
+    } catch (err) {
+      console.error('getUserMedia error', err);
+      handleCameraError(err);
+    }
+  }
+
+  function handleCameraError(err) {
+    // Friendly messages for common cases
+    if (err && err.name === 'NotAllowedError') {
+      setStatus('Camera permission denied', '#ff3b30');
+      permissionHint.innerHTML = 'Camera access was blocked. Please enable camera permission in your browser settings for this site.';
+    } else if (err && err.name === 'NotFoundError') {
+      setStatus('No camera found', '#ff3b30');
+      permissionHint.innerHTML = 'No camera device was found on this device.';
+    } else if (err && err.name === 'NotReadableError') {
+      setStatus('Camera in use by another app', '#ff3b30');
+      permissionHint.innerHTML = 'Close other apps using the camera and try again.';
+    } else {
+      setStatus('Camera error', '#ff3b30');
+      permissionHint.innerHTML = 'Unexpected camera error. Check console for details.';
+    }
+  }
+
+  // Stop camera (cleanup)
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+      video.srcObject = null;
+      setStatus('Camera stopped');
+      startBtn.style.display = 'block';
+      permissionHint.style.display = 'block';
+    }
+  }
+
+  // Wire start button
+  startBtn.addEventListener('click', async () => {
+    // If permission already denied, show instructions
+    const state = await getPermissionState();
+    if (state === 'denied') {
+      setStatus('Camera permission is blocked', '#ff3b30');
+      permissionHint.innerHTML = 'Camera permission is blocked. Open browser settings and allow camera for this site, then reload.';
+      return;
+    }
+    await startCamera();
+  });
+
+  // If page loaded and permission already granted, auto-start (optional)
+  (async function autoStartIfGranted() {
+    if (!checkSecureContext()) return;
+    const state = await getPermissionState();
+    if (state === 'granted') {
+      // start automatically because user already allowed camera
+      startBtn.style.display = 'none';
+      permissionHint.style.display = 'none';
+      startCamera();
+    }
+  })();
+
+  /********* Existing scan flow (unchanged) *********/
+  const ROI = { w: 180, h: 40 };
+
   function captureRoiCanvas() {
     const vw = video.videoWidth || 1280;
     const vh = video.videoHeight || 720;
-    // center ROI in video coordinates
     const roiW = Math.min(ROI.w, vw);
     const roiH = Math.min(ROI.h, vh);
     const sx = Math.max(0, Math.floor((vw - roiW) / 2));
     const sy = Math.max(0, Math.floor((vh - roiH) / 2));
     const canvas = document.createElement('canvas');
-    // upscale the ROI to improve decoding (helps ZXing/Tesseract)
     const upscale = 3;
     canvas.width = roiW * upscale;
     canvas.height = roiH * upscale;
     const ctx = canvas.getContext('2d');
-    // apply contrast filter to help detection
     ctx.filter = 'grayscale(100%) contrast(150%)';
     ctx.drawImage(video, sx, sy, roiW, roiH, 0, 0, canvas.width, canvas.height);
     return canvas;
   }
 
-  // Primary scan flow: try barcode-first, then OCR fallback
-  async function scanFlow() {
-    setStatus('Scanning...');
-    // 1) Try native BarcodeDetector if available
-    try {
-      const nativeResult = await tryNativeBarcodeDetector();
-      if (nativeResult) {
-        setStatus('Barcode: ' + nativeResult, '#34c759');
-        updateLastRow(nativeResult);
-        return;
-      }
-    } catch (e) {
-      console.warn('Native detector error', e);
-    }
-
-    // 2) Try ZXing JS fallback
-    try {
-      const zxingResult = await tryZXingDecode();
-      if (zxingResult) {
-        setStatus('Barcode: ' + zxingResult, '#34c759');
-        updateLastRow(zxingResult);
-        return;
-      }
-    } catch (e) {
-      console.warn('ZXing decode error', e);
-    }
-
-    // 3) Fallback to existing OCR
-    try {
-      setStatus('Barcode not found — running OCR', '#ff9500');
-      const ocrResult = await runExistingOCR();
-      if (ocrResult) {
-        setStatus('OCR: ' + ocrResult, '#34c759');
-        updateLastRow(ocrResult);
-        return;
-      } else {
-        setStatus('RE-TRY: ALIGN BOX', '#ff3b30');
-      }
-    } catch (e) {
-      console.error('OCR error', e);
-      setStatus('OCR error', '#ff3b30');
-    }
-  }
-
-  // Native BarcodeDetector attempt
   async function tryNativeBarcodeDetector(timeoutMs = 1200) {
     if (!('BarcodeDetector' in window)) return null;
-    // check supported formats
     try {
       const supported = await BarcodeDetector.getSupportedFormats();
-      // prefer code_128; if not present, still try common formats
       const want = supported.includes('code_128') ? ['code_128'] : supported;
       const detector = new BarcodeDetector({ formats: want });
       const canvas = captureRoiCanvas();
-      // run detect with timeout
       const detectPromise = detector.detect(canvas).then(results => {
-        if (results && results.length > 0) {
-          // return first barcode rawValue or raw text
-          return results[0].rawValue || results[0].raw || null;
-        }
+        if (results && results.length > 0) return results[0].rawValue || results[0].raw || null;
         return null;
-      }).catch(err => {
-        console.warn('BarcodeDetector.detect failed', err);
-        return null;
-      });
-
+      }).catch(() => null);
       return await promiseTimeout(detectPromise, timeoutMs, null);
     } catch (err) {
-      console.warn('BarcodeDetector not usable', err);
       return null;
     }
   }
 
-  // ZXing JS fallback attempt
   async function tryZXingDecode(timeoutMs = 2000) {
-    // ZXing UMD exposes ZXingBrowser or ZXing namespace depending on version
-    const ZX = window.ZXing || window.ZXingBrowser || window.ZXingJs || window.ZXingLibrary || window.ZXing;
-    // The unpkg UMD exposes ZXingBrowser or ZXing depending on build; try common constructors
+    // attempt to use ZXing UMD reader
     let reader = null;
     try {
-      if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
-        reader = new window.ZXing.BrowserMultiFormatReader();
-      } else if (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader) {
-        reader = new window.ZXingBrowser.BrowserMultiFormatReader();
-      } else if (window.ZXing && window.ZXing.BrowserBarcodeReader) {
-        reader = new window.ZXing.BrowserBarcodeReader();
-      } else if (window.ZXing && window.ZXing.BrowserCodeReader) {
-        reader = new window.ZXing.BrowserCodeReader();
-      } else if (window.ZXing) {
-        // try generic
-        reader = new window.ZXing.BrowserMultiFormatReader?.() || new window.ZXing.BrowserBarcodeReader?.();
-      }
-    } catch (e) {
-      console.warn('ZXing reader init failed', e);
-      reader = null;
-    }
-
-    if (!reader) {
-      // As a last resort, try the known UMD name
-      if (window.BrowserMultiFormatReader) {
-        reader = new window.BrowserMultiFormatReader();
-      } else {
-        return null;
-      }
-    }
-
-    // Capture ROI to data URL and ask ZXing to decode from image
+      if (window.BrowserMultiFormatReader) reader = new window.BrowserMultiFormatReader();
+      else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) reader = new window.ZXing.BrowserMultiFormatReader();
+    } catch (e) { reader = null; }
+    if (!reader) return null;
     const canvas = captureRoiCanvas();
     const dataUrl = canvas.toDataURL('image/png');
-
-    // ZXing's UMD provides decodeFromImage or decodeFromImageUrl in many builds
     const decodePromise = (async () => {
       try {
-        // try decodeFromImage (some builds)
         if (typeof reader.decodeFromImage === 'function') {
-          // decodeFromImage(imageElementIdOrElement)
-          // create an Image element
           const img = new Image();
           img.src = dataUrl;
-          await img.decode().catch(()=>{}); // ensure loaded
+          await img.decode().catch(()=>{});
           const result = await reader.decodeFromImage(img);
           return result?.text || result?.getText?.() || null;
         }
-
-        // try decodeFromImageUrl (some builds)
         if (typeof reader.decodeFromImageUrl === 'function') {
           const result = await reader.decodeFromImageUrl(undefined, dataUrl);
           return result?.text || result?.getText?.() || null;
         }
-
-        // try decodeFromCanvas (some builds expose decodeFromCanvas)
         if (typeof reader.decodeFromCanvas === 'function') {
           const result = await reader.decodeFromCanvas(canvas);
           return result?.text || result?.getText?.() || null;
         }
-
-        // fallback: use decodeOnce from BrowserBarcodeReader if available
-        if (typeof reader.decodeOnce === 'function') {
-          const result = await reader.decodeOnce(dataUrl);
-          return result?.text || result?.getText?.() || null;
-        }
-
-        // If none of the above exist, try the low-level ZXing decode via BinaryBitmap (advanced)
-        // Skip complex path to keep fallback simple; return null
         return null;
       } catch (err) {
-        console.warn('ZXing decode error', err);
         return null;
       }
     })();
-
     return await promiseTimeout(decodePromise, timeoutMs, null);
   }
 
-  // Utility: promise with timeout
   function promiseTimeout(promise, ms, fallback) {
     let id;
-    const timeout = new Promise(resolve => {
-      id = setTimeout(() => resolve(fallback), ms);
-    });
-    return Promise.race([promise, timeout]).then(result => {
-      clearTimeout(id);
-      return result;
-    });
+    const timeout = new Promise(resolve => { id = setTimeout(() => resolve(fallback), ms); });
+    return Promise.race([promise, timeout]).then(result => { clearTimeout(id); return result; });
   }
 
-  // Existing OCR flow (keeps your Tesseract usage)
   async function runExistingOCR() {
-    // capture ROI to canvas (same as before)
     const canvas = captureRoiCanvas();
-    // Tesseract expects an element or blob; pass canvas
     try {
       const { data: { text } } = await Tesseract.recognize(canvas, 'eng', { logger: m => {} });
       let raw = (text || '').replace(/[^0-9-]/g, '').trim();
       let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
       if (match) {
-        // normalize to 0000-0000 if needed
         let code = match[0];
         if (/^\d{8}$/.test(code)) code = code.slice(0,4) + '-' + code.slice(4);
         return code;
       }
       return null;
     } catch (err) {
-      console.error('Tesseract error', err);
       return null;
     }
   }
 
-  // Update UI row with scanned code
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
     const lastRow = rows[rows.length - 1];
@@ -325,12 +272,29 @@
     if (codeInput.value === "") { codeInput.value = code; } else { addNewRow(code); }
   }
 
-  // Hook up scan button
-  document.getElementById('scanBtn').addEventListener('click', async () => {
-    await scanFlow();
-  });
+  async function scanFlow() {
+    if (!stream) {
+      setStatus('Start camera first', '#ff3b30');
+      return;
+    }
+    setStatus('Scanning...');
+    try {
+      const nativeResult = await tryNativeBarcodeDetector();
+      if (nativeResult) { setStatus('Barcode: ' + nativeResult, '#34c759'); updateLastRow(nativeResult); return; }
+    } catch (e) {}
+    try {
+      const zxingResult = await tryZXingDecode();
+      if (zxingResult) { setStatus('Barcode: ' + zxingResult, '#34c759'); updateLastRow(zxingResult); return; }
+    } catch (e) {}
+    setStatus('Barcode not found — running OCR', '#ff9500');
+    const ocrResult = await runExistingOCR();
+    if (ocrResult) { setStatus('OCR: ' + ocrResult, '#34c759'); updateLastRow(ocrResult); return; }
+    setStatus('RE-TRY: ALIGN BOX', '#ff3b30');
+  }
 
-  // Existing helper functions (unchanged except minor reuse)
+  document.getElementById('scanBtn').addEventListener('click', scanFlow);
+
+  // Existing helpers
   function addNewRow(code = "") {
     const div = document.createElement('div');
     div.className = 'item-row';
@@ -363,25 +327,14 @@
     link.href = canvas.toDataURL("image/png");
     link.click();
     alert("ORDER SAVED!");
-    location.reload(); // Simplest reset
+    location.reload();
   }
 
-  // Expose functions for inline onclick handlers
   window.addNewRow = addNewRow;
   window.saveAndReset = saveAndReset;
 
-  // Optional: warm up ZXing reader in background to reduce first-scan latency
-  (function warmUpZXing() {
-    try {
-      if (window.BrowserMultiFormatReader) {
-        // instantiate once
-        new window.BrowserMultiFormatReader();
-      } else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
-        new window.ZXing.BrowserMultiFormatReader();
-      }
-    } catch (e) { /* ignore */ }
-  })();
-
+  // Optional: stop camera when leaving page
+  window.addEventListener('beforeunload', stopCamera);
 </script>
 </body>
 </html>
