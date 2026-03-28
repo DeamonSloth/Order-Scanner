@@ -5,11 +5,6 @@
   <title>Warehouse Order Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
-
-  <!-- Polyfills for BarcodeDetector (WASM ZBar + polyfill) -->
-  <script src="https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@undecaf/barcode-detector-polyfill@0.9.21/dist/index.js"></script>
-
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
     .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
@@ -79,129 +74,27 @@
   navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } })
     .then(stream => video.srcObject = stream);
 
-  // ---------- REPLACED captureText() - barcode-first, longer scan, full-frame + ROI, OCR fallback ----------
   async function captureText() {
     status.textContent = "SEARCHING...";
-    status.style.color = "#007aff";
-
-    // detect iOS to prefer polyfill earlier (polyfill script tags should be present)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-    // Prepare a canvas for ROI and optionally full-frame capture
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
+    canvas.width = 400; canvas.height = 100;
+    ctx.filter = "grayscale(100%) contrast(150%)";
+    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
 
-    // Preferred barcode formats - expand to common 1D symbologies your tags might use
-    const formats = ['code_128','code_39','code_93','ean_13','ean_8','itf','interleaved2of5','qr_code'];
-
-    // Try to get a BarcodeDetector (native or polyfill)
-    let detector = null;
-    try {
-      if (!isIOS && 'BarcodeDetector' in window) {
-        detector = new BarcodeDetector({ formats });
-      } else {
-        // Force polyfill on iOS or if native missing; polyfill should expose BarcodeDetector
-        if (!('BarcodeDetector' in window)) {
-          await new Promise(r => setTimeout(r, 200));
+    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        let raw = text.replace(/[^0-9-]/g, '').trim();
+        let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
+        if (match) {
+          updateLastRow(match[0]);
+          status.textContent = "SUCCESS: " + match[0];
+          status.style.color = "#34c759";
+        } else {
+          status.textContent = "RE-TRY: ALIGN BOX";
+          status.style.color = "#ff3b30";
         }
-        detector = new BarcodeDetector({ formats });
-      }
-    } catch (e) {
-      detector = null;
-    }
-
-    // If we have a detector, attempt detection for a longer window and check full frame + ROI
-    if (detector) {
-      let lastValue = null;
-      let stableCount = 0;
-      const maxAttempts = 80; // increase attempts so fallback doesn't happen too fast (~3-4s)
-      let attempts = 0;
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        if (video.readyState >= 2) {
-          const vw = video.videoWidth, vh = video.videoHeight;
-
-          // 1) Try full frame detection first (so barcodes outside the green box are found)
-          try {
-            // Some detectors accept the video element directly; polyfill handles canvas too
-            const fullResults = await detector.detect(video);
-            if (fullResults && fullResults.length) {
-              const raw = fullResults[0].rawValue.trim();
-              const normalized = raw.replace(/[^0-9]/g, '');
-              let formatted = normalized;
-              if (normalized.length === 8) formatted = normalized.slice(0,4) + '-' + normalized.slice(4);
-
-              if (formatted === lastValue) stableCount++; else { stableCount = 1; lastValue = formatted; }
-              status.textContent = "SUCCESS: " + formatted;
-              status.style.color = "#34c759";
-              if (stableCount >= 2) { updateLastRow(formatted); return; }
-              await new Promise(r => setTimeout(r, 50));
-              continue;
-            }
-          } catch (err) {
-            // ignore transient errors from detector.detect(video)
-          }
-
-          // 2) If full frame didn't find anything, crop to your existing ROI (same as OCR)
-          try {
-            const sx = Math.floor((vw / 2) - 200);
-            const sy = Math.floor((vh / 2) - 50);
-            const roiW = 400, roiH = 100;
-            canvas.width = roiW; canvas.height = roiH;
-            ctx.filter = "grayscale(100%) contrast(150%)";
-            ctx.drawImage(video, sx, sy, roiW, roiH, 0, 0, roiW, roiH);
-
-            const roiResults = await detector.detect(canvas);
-            if (roiResults && roiResults.length) {
-              const raw = roiResults[0].rawValue.trim();
-              const normalized = raw.replace(/[^0-9]/g, '');
-              let formatted = normalized;
-              if (normalized.length === 8) formatted = normalized.slice(0,4) + '-' + normalized.slice(4);
-
-              if (formatted === lastValue) stableCount++; else { stableCount = 1; lastValue = formatted; }
-              status.textContent = "SUCCESS: " + formatted;
-              status.style.color = "#34c759";
-              if (stableCount >= 2) { updateLastRow(formatted); return; }
-            } else {
-              status.textContent = "SCANNING...";
-              status.style.color = "#007aff";
-              stableCount = 0;
-              lastValue = null;
-            }
-          } catch (err) {
-            // ignore transient errors and continue scanning
-          }
-        }
-        // small pause to avoid tight loop
-        await new Promise(r => setTimeout(r, 50));
-      }
-      // If we exit loop without barcode, fall through to OCR fallback
-    }
-
-    // --- OCR fallback (keeps your original logic exactly) ---
-    try {
-      canvas.width = 400; canvas.height = 100;
-      ctx.filter = "grayscale(100%) contrast(150%)";
-      ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
-
-      const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
-      let raw = text.replace(/[^0-9-]/g, '').trim();
-      let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
-      if (match) {
-        updateLastRow(match[0]);
-        status.textContent = "SUCCESS: " + match[0];
-        status.style.color = "#34c759";
-      } else {
-        status.textContent = "RE-TRY: ALIGN BOX";
-        status.style.color = "#ff3b30";
-      }
-    } catch (err) {
-      status.textContent = "ERROR: OCR FAILED";
-      status.style.color = "#ff3b30";
-    }
+    });
   }
-  // ---------- end captureText replacement ----------
 
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
