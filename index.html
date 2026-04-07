@@ -123,7 +123,7 @@
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#007aff'; ctx.fillRect(0, 0, 600, 100);
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 36px sans-serif';
-    ctx.fillText('WAREHOUSE ORDER', 30, 65);
+    ctx.fillText('ORDER', 30, 65);
     ctx.fillStyle = '#000'; ctx.font = 'bold 24px sans-serif';
     ctx.fillText('CUSTOMER: ' + cust.toUpperCase(), 30, 150);
     ctx.fillText('JOB / PO: ' + po.toUpperCase(), 30, 190);
@@ -134,7 +134,7 @@
     rows.forEach((row, i) => {
       const q = (row.querySelector('.qty-field').value || '1').padStart(2, '0');
       const c = row.querySelector('.code-field').value;
-      if (c) ctx.fillText(`${q} -   -   ${c}`, 40, 300 + (i * 60));
+      if (c) ctx.fillText(`${q}   -   ${c}`, 40, 300 + (i * 60));
     });
 
     const link = document.createElement('a');
