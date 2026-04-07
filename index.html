@@ -2,41 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Warehouse Order Pro v2.1 (Fixed)</title>
+  <title>Warehouse Order Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 180px; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
     .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
     label { display: block; font-size: 10px; font-weight: bold; color: #888; margin-bottom: 4px; text-transform: uppercase; }
     input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fafafa; }
-
-    .scanner-window { position: relative; width: 100%; height: 180px; background: #111; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
-    video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .ocr-target {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      width: 220px; height: 50px;
-      border: 2px solid #34c759;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
-      border-radius: 4px; pointer-events: none;
+    
+    .scanner-window { position: relative; width: 100%; height: 140px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .ocr-target { 
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+        width: 180px; height: 40px; 
+        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); 
+        border-radius: 4px; pointer-events: none; 
     }
-    .cam-overlay {
-      position: absolute; inset: 0; background: rgba(0,0,0,0.9);
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 15px; font-weight: bold; text-align: center;
-      cursor: pointer; border-radius: 9px; z-index: 10;
-    }
-    .cam-overlay span { padding: 12px 20px; border: 2px solid #007aff; border-radius: 8px; background: #000; }
 
     .item-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
-    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
-
-    .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 12px 15px 20px; border-top: 2px solid #ddd; z-index: 1000; box-sizing: border-box; }
-    .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; box-sizing: border-box; }
-    .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; box-shadow: 0 4px #0056b3; }
-    .btn-scan:disabled { background: #b0c8f0; box-shadow: none; }
+    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; }
+    
+    .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
+    .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; }
+    .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
     .btn-finish { background: #34c759; color: white; width: 100%; height: 65px; border-bottom: 5px solid #248f40; }
-    #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; letter-spacing: 1px; }
+    #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; }
   </style>
 </head>
 <body>
@@ -52,16 +43,13 @@
     </div>
   </div>
 
-  <div id="status">UNLOCKED</div>
+  <div id="status">Ready</div>
   <div class="scanner-window">
-    <video id="v" autoplay playsinline muted></video>
-    <div class="ocr-target" id="ocr-box" style="display:none;"></div>
-    <div class="cam-overlay" id="cam-overlay" onclick="startCamera()">
-      <span>📷 TAP TO START CAMERA</span>
-    </div>
+    <video id="v" autoplay playsinline></video>
+    <div class="ocr-target"></div>
   </div>
 
-  <button class="btn btn-scan" id="scan-btn" onclick="captureText()" disabled>📸 READ 8-DIGIT CODE</button>
+  <button class="btn btn-scan" onclick="captureText()">📸 READ 8-DIGIT CODE</button>
 
   <div id="items-list">
     <div class="item-row">
@@ -81,176 +69,50 @@
 
 <script>
   const video = document.getElementById('v');
-  const statusEl = document.getElementById('status');
-  const scanBtn = document.getElementById('scan-btn');
-  const overlay = document.getElementById('cam-overlay');
-  const ocrBox = document.getElementById('ocr-box');
+  const status = document.getElementById('status');
 
-  let cameraReady = false;
-  let scanning = false;
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } })
+    .then(stream => video.srcObject = stream);
 
-  // --- Create and initialize a single worker once ---
-  const worker = Tesseract.createWorker({
-    logger: m => console.log('tess:', m)
-  });
-
-  async function initWorker() {
-    try {
-      await worker.load();
-      await worker.loadLanguage('eng');
-      await worker.initialize('eng');
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789-',
-        classify_bln_numeric_mode: '1'
-      });
-      console.log('Tesseract worker ready');
-    } catch (e) {
-      console.error('initWorker error', e);
-      statusEl.textContent = 'OCR INIT ERROR';
-      statusEl.style.color = '#ff3b30';
-    }
-  }
-  // initialize on load
-  initWorker();
-
-  function startCamera() {
-    overlay.innerHTML = '<span>⏳ Warming Up Engine...</span>';
-    statusEl.textContent = 'CONNECTING BRIDGE...';
-    statusEl.style.color = '#007aff';
-
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 } },
-      audio: false
-    })
-    .then(stream => {
-      video.srcObject = stream;
-
-      const checkFrameLink = () => {
-        if (video.readyState >= 2 && video.videoWidth > 0) {
-          overlay.style.display = 'none';
-          ocrBox.style.display = 'block';
-          scanBtn.disabled = false;
-          cameraReady = true;
-          statusEl.textContent = 'READY TO SCAN';
-          statusEl.style.color = '#34c759';
-        } else {
-          setTimeout(checkFrameLink, 200);
-        }
-      };
-
-      video.play().then(checkFrameLink).catch(e => {
-        console.warn('video.play failed, retrying', e);
-        setTimeout(() => video.play().then(checkFrameLink).catch(()=>{}), 500);
-      });
-    })
-    .catch(err => {
-      console.error('camera permission error', err);
-      overlay.innerHTML = '<span>⚠️ CAMERA DENIED<br>Check Camera Permissions</span>';
-      statusEl.textContent = 'PERMISSION ERROR';
-      statusEl.style.color = '#ff3b30';
-    });
-  }
-
-  // --- captureText uses the initialized worker (reused) ---
   async function captureText() {
-    if (!cameraReady || scanning) return;
-    scanning = true;
-    scanBtn.disabled = true;
-    statusEl.textContent = 'READING...';
-    statusEl.style.color = '#007aff';
+    status.textContent = "SEARCHING...";
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 400; canvas.height = 100;
+    ctx.filter = "grayscale(100%) contrast(150%)";
+    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
 
-    try {
-      if (!video.videoWidth || !video.videoHeight) {
-        console.warn('video dimensions not ready');
-        statusEl.textContent = 'RE-TRY: CAMERA NOT READY';
-        statusEl.style.color = '#ff3b30';
-        return;
-      }
-
-      // Center crop logic (conservative caps for high-res phones)
-      const cropW = Math.min(video.videoWidth * 0.7, 1000);
-      const cropH = Math.min(video.videoHeight * 0.35, 300);
-      const cropX = (video.videoWidth - cropW) / 2;
-      const cropY = (video.videoHeight - cropH) / 2;
-
-      // Conservative scale to avoid huge canvases on Fold5
-      const scale = 1.0;
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(cropW * scale);
-      canvas.height = Math.round(cropH * scale);
-      const ctx = canvas.getContext('2d');
-
-      // Try CSS filter; fallback to manual binarize if not supported or throws
-      try {
-        ctx.filter = 'grayscale(100%) contrast(200%) brightness(110%)';
-        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-      } catch (e) {
-        console.warn('ctx.filter drawImage failed, using manual preprocess', e);
-        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = img.data;
-        // simple contrast + threshold
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const gray = (r*0.3 + g*0.59 + b*0.11);
-          // quick contrast stretch and threshold
-          const adjusted = Math.min(255, Math.max(0, (gray - 80) * 1.6));
-          const v = adjusted > 140 ? 255 : 0;
-          data[i] = data[i+1] = data[i+2] = v;
+    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        let raw = text.replace(/[^0-9-]/g, '').trim();
+        let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
+        if (match) {
+          updateLastRow(match[0]);
+          status.textContent = "SUCCESS: " + match[0];
+          status.style.color = "#34c759";
+        } else {
+          status.textContent = "RE-TRY: ALIGN BOX";
+          status.style.color = "#ff3b30";
         }
-        ctx.putImageData(img, 0, 0);
-      }
-
-      // Debug: show canvas in console as data URL if needed
-      // console.log('canvas dataURL', canvas.toDataURL('image/png'));
-
-      // Use the already-initialized worker
-      const { data: { text } } = await worker.recognize(canvas);
-      console.log('ocr raw:', text);
-
-      const raw = text.replace(/[^0-9-]/g, '').trim();
-      const match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
-
-      if (match) {
-        let code = match[0];
-        if (/^\d{8}$/.test(code)) code = code.slice(0, 4) + '-' + code.slice(4);
-        updateLastRow(code);
-        statusEl.textContent = 'SUCCESS: ' + code;
-        statusEl.style.color = '#34c759';
-      } else {
-        statusEl.textContent = 'RE-TRY: ALIGN BOX';
-        statusEl.style.color = '#ff3b30';
-      }
-    } catch (err) {
-      console.error('captureText error', err);
-      statusEl.textContent = 'SCAN ERROR';
-      statusEl.style.color = '#ff3b30';
-    } finally {
-      scanning = false;
-      scanBtn.disabled = false;
-    }
+    });
   }
 
   function updateLastRow(code) {
     const rows = document.querySelectorAll('.item-row');
     const lastRow = rows[rows.length - 1];
     const codeInput = lastRow.querySelector('.code-field');
-    if (!codeInput.value) { codeInput.value = code; } else { addNewRow(code); }
+    if (codeInput.value === "") { codeInput.value = code; } else { addNewRow(code); }
   }
 
-  function addNewRow(code = '') {
+  function addNewRow(code = "") {
     const div = document.createElement('div');
     div.className = 'item-row';
-    div.innerHTML = `
-      <div style="width: 70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div>
-      <div style="flex: 1;"><label>Item Code</label><input type="text" class="code-field" value="${code}" placeholder="0000-0000"></div>
-      <button class="btn-del" onclick="this.parentElement.remove()">✕</button>`;
+    div.innerHTML = `<div style="width: 70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div><div style="flex: 1;"><label>Item Code</label><input type="text" class="code-field" value="${code}"></div><button class="btn-del" onclick="this.parentElement.remove()">✕</button>`;
     document.getElementById('items-list').appendChild(div);
   }
 
   function saveAndReset() {
-    const cust = document.getElementById('customer').value || 'NO-NAME';
-    const po = document.getElementById('po').value || 'NO-PO';
+    const cust = document.getElementById('customer').value || "NO-NAME";
+    const po = document.getElementById('po').value || "NO-PO";
     const rows = document.querySelectorAll('.item-row');
     const canvas = document.getElementById('canvas-export');
     const ctx = canvas.getContext('2d');
@@ -280,14 +142,8 @@
     link.href = canvas.toDataURL('image/png');
     link.click();
     statusEl.textContent = 'ORDER SAVED!';
-    statusEl.style.color = '#34c759';
     setTimeout(() => location.reload(), 1500);
   }
-
-  // Terminate worker when page unloads
-  window.addEventListener('beforeunload', async () => {
-    try { await worker.terminate(); } catch (e) { /* ignore */ }
-  });
 </script>
 </body>
 </html>
