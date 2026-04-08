@@ -142,7 +142,151 @@
     link.href = canvas.toDataURL('image/png');
     link.click();
     statusEl.textContent = 'ORDER SAVED!';
-    setTimeout(() => location.reload();
+    setTimeout(() => location.reload()<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order Sheet Pro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f9; padding: 12px; padding-bottom: 160px; }
+    .header-box { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #ddd; }
+    label { display: block; font-size: 10px; font-weight: bold; color: #888; margin-bottom: 4px; text-transform: uppercase; }
+    input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fafafa; }
+    
+    .scanner-window { position: relative; width: 100%; height: 140px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 10px; border: 3px solid #007aff; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .ocr-target { 
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+        width: 180px; height: 40px; 
+        border: 2px solid #34c759; box-shadow: 0 0 0 9999px rgba(0,0,0,0.7); 
+        border-radius: 4px; pointer-events: none; 
+    }
+
+    .item-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; background: #fff; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
+    .btn-del { background: #ff3b30; color: white; border: none; border-radius: 8px; width: 44px; height: 44px; font-weight: bold; cursor: pointer; }
+    
+    .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
+    .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; }
+    .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
+    .btn-finish { background: #34c759; color: white; width: 90%; height: 65px; border-bottom: 5px solid #248f40; }
+    #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+
+  <div class="header-box">
+    <div style="margin-bottom: 8px;">
+      <label>Customer Name</label>
+      <input type="text" id="customer" placeholder="REQUIRED">
+    </div>
+    <div>
+      <label>Job / PO</label>
+      <input type="text" id="po" placeholder="REQUIRED">
+    </div>
+  </div>
+
+  <div id="status">Ready</div>
+  <div class="scanner-window">
+    <video id="v" autoplay playsinline></video>
+    <div class="ocr-target"></div>
+  </div>
+
+  <button class="btn btn-scan" onclick="captureText()">READ 8-DIGIT CODE</button>
+
+  <div id="items-list">
+    <div class="item-row">
+      <div style="width: 70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div>
+      <div style="flex: 1;"><label>Item Code</label><input type="text" class="code-field" placeholder="0000-0000"></div>
+      <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+    </div>
+  </div>
+
+  <button class="btn" style="background:#8e8e93; color:white; width:100%; margin-top:10px;" onclick="addNewRow()">+ MANUAL LINE</button>
+
+  <div class="footer-actions">
+    <button class="btn btn-finish" onclick="saveAndReset()">FINISH & SAVE</button>
+  </div>
+
+  <canvas id="canvas-export" style="display:none;"></canvas>
+
+<script>
+  const video = document.getElementById('v');
+  const status = document.getElementById('status');
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } })
+    .then(stream => video.srcObject = stream);
+
+  async function captureText() {
+    status.textContent = "SEARCHING...";
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 400; canvas.height = 100;
+    ctx.filter = "grayscale(100%) contrast(150%)";
+    ctx.drawImage(video, (video.videoWidth/2)-200, (video.videoHeight/2)-50, 400, 100, 0, 0, 400, 100);
+
+    Tesseract.recognize(canvas, 'eng').then(({ data: { text } }) => {
+        let raw = text.replace(/[^0-9-]/g, '').trim();
+        let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
+        if (match) {
+          updateLastRow(match[0]);
+          status.textContent = "SUCCESS: " + match[0];
+          status.style.color = "#34c759";
+        } else {
+          status.textContent = "RE-TRY: ALIGN BOX";
+          status.style.color = "#ff3b30";
+        }
+    });
+  }
+
+  function updateLastRow(code) {
+    const rows = document.querySelectorAll('.item-row');
+    const lastRow = rows[rows.length - 1];
+    const codeInput = lastRow.querySelector('.code-field');
+    if (codeInput.value === "") { codeInput.value = code; } else { addNewRow(code); }
+  }
+
+  function addNewRow(code = "") {
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.innerHTML = `<div style="width: 70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div><div style="flex: 1;"><label>Item Code</label><input type="text" class="code-field" value="${code}"></div><button class="btn-del" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById('items-list').appendChild(div);
+  }
+
+  function saveAndReset() {
+    const cust = document.getElementById('customer').value || "NO-NAME";
+    const po = document.getElementById('po').value || "NO-PO";
+    const rows = document.querySelectorAll('.item-row');
+    const canvas = document.getElementById('canvas-export');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = 600;
+    canvas.height = 400 + (rows.length * 60);
+
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#007aff'; ctx.fillRect(0, 0, 600, 100);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 36px sans-serif';
+    ctx.fillText('ORDER', 30, 65);
+    ctx.fillStyle = '#000'; ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('CUSTOMER: ' + cust.toUpperCase(), 30, 150);
+    ctx.fillText('JOB / PO: ' + po.toUpperCase(), 30, 190);
+    ctx.font = '18px sans-serif'; ctx.fillStyle = '#666';
+    ctx.fillText('DATE: ' + new Date().toLocaleString(), 30, 230);
+    ctx.fillStyle = '#000'; ctx.font = 'bold 26px monospace';
+
+    rows.forEach((row, i) => {
+      const q = (row.querySelector('.qty-field').value || '1').padStart(2, '0');
+      const c = row.querySelector('.code-field').value;
+      if (c) ctx.fillText(`${q}   -   ${c}`, 40, 300 + (i * 60));
+    });
+
+    const link = document.createElement('a');
+    link.download = `ORDER-${cust}-${po}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    statusEl.textContent = 'ORDER SAVED!';
+    setTimeout(() => location.reload(), 1500);
   }
 </script>
 </body>
