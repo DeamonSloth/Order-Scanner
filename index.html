@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Warehouse Order Pro</title>
+  <title>Order Sheet Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
   <style>
@@ -26,7 +26,7 @@
     .footer-actions { position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; padding: 15px; border-top: 2px solid #ddd; z-index: 1000; }
     .btn { padding: 18px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; }
     .btn-scan { background: #007aff; color: #fff; width: 100%; margin-bottom: 10px; }
-    .btn-finish { background: #34c759; color: white; width: 100%; height: 65px; border-bottom: 5px solid #248f40; }
+    .btn-finish { background: #34c759; color: white; width: 90%; height: 65px; border-bottom: 5px solid #248f40; }
     #status { font-size: 14px; text-align: center; color: #007aff; font-weight: 900; margin-bottom: 6px; min-height: 18px; text-transform: uppercase; }
   </style>
 </head>
@@ -38,7 +38,7 @@
       <input type="text" id="customer" placeholder="REQUIRED">
     </div>
     <div>
-      <label>Job / PO Number</label>
+      <label>Job / PO</label>
       <input type="text" id="po" placeholder="REQUIRED">
     </div>
   </div>
