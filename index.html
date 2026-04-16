@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Order Sheet Pro (iPhone Optimized)</title>
+<title>Order Sheet Pro (iPhone Only)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 
 <!-- OCR fallback -->
 <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
 
-<!-- ZBar WASM barcode fallback -->
+<!-- ZBar WASM barcode scanner -->
 <script src="https://unpkg.com/@undecaf/zbar-wasm@0.9.14/dist/index.js"></script>
 
 <style>
@@ -29,87 +29,105 @@
   .btn-finish { background:#34c759; color:white; height:65px; border-bottom:5px solid #248f40; }
 
   #status { font-size:14px; text-align:center; color:#007aff; font-weight:900; margin-bottom:6px; min-height:18px; text-transform:uppercase; }
+
+  /* Android Blocker */
+  #android-blocker {
+    display:none;
+    text-align:center;
+    padding:40px;
+    font-size:20px;
+    font-weight:bold;
+    color:#ff3b30;
+  }
 </style>
 </head>
 
 <body>
 
-<div class="header-box">
-  <label>Customer Name</label>
-  <input id="customer" placeholder="REQUIRED">
-
-  <label>Job / PO</label>
-  <input id="po" placeholder="REQUIRED">
+<div id="android-blocker">
+  This app is for iPhone only.<br><br>
+  Please use the Android app instead.
 </div>
 
-<div id="status">Ready</div>
+<div id="app-content" style="display:none;">
 
-<div class="scanner-window">
-  <video id="v" autoplay playsinline muted></video>
-</div>
+  <div class="header-box">
+    <label>Customer Name</label>
+    <input id="customer" placeholder="REQUIRED">
 
-<button class="btn btn-scan" onclick="scanBarcode()">SCAN BARCODE</button>
-<button class="btn btn-scan" style="background:#8e8e93" onclick="captureText()">READ 8‑DIGIT CODE</button>
-
-<div id="items-list">
-  <div class="item-row">
-    <div style="width:70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div>
-    <div style="flex:1;"><label>Item Code</label><input class="code-field" placeholder="0000-0000"></div>
-    <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+    <label>Job / PO</label>
+    <input id="po" placeholder="REQUIRED">
   </div>
+
+  <div id="status">Ready</div>
+
+  <div class="scanner-window">
+    <video id="v" autoplay playsinline muted></video>
+  </div>
+
+  <button class="btn btn-scan" onclick="scanBarcode()">SCAN BARCODE</button>
+  <button class="btn btn-scan" style="background:#8e8e93" onclick="captureText()">READ 8‑DIGIT CODE</button>
+
+  <div id="items-list">
+    <div class="item-row">
+      <div style="width:70px;"><label>Qty</label><input type="number" class="qty-field" value="1"></div>
+      <div style="flex:1;"><label>Item Code</label><input class="code-field" placeholder="0000-0000"></div>
+      <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+    </div>
+  </div>
+
+  <button class="btn" style="background:#8e8e93; color:white;" onclick="addNewRow()">+ MANUAL LINE</button>
+
+  <div class="footer-actions">
+    <button class="btn btn-finish" onclick="saveAndReset()">FINISH & SAVE</button>
+  </div>
+
+  <canvas id="canvas-export" style="display:none;"></canvas>
+
 </div>
-
-<button class="btn" style="background:#8e8e93; color:white;" onclick="addNewRow()">+ MANUAL LINE</button>
-
-<div class="footer-actions">
-  <button class="btn btn-finish" onclick="saveAndReset()">FINISH & SAVE</button>
-</div>
-
-<canvas id="canvas-export" style="display:none;"></canvas>
 
 <script>
+/* ---------------------------
+   DEVICE CHECK (iPhone only)
+----------------------------*/
+const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+if (!isIphone) {
+  document.getElementById("android-blocker").style.display = "block";
+} else {
+  document.getElementById("app-content").style.display = "block";
+  startCamera();
+}
+
+let zbar = null;
 const video = document.getElementById("v");
 const status = document.getElementById("status");
 
-let zbar = null;
+/* ---------------------------
+   CAMERA (iPhone optimized)
+----------------------------*/
+function startCamera() {
+  navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: "environment",
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  })
+  .then(stream => video.srcObject = stream)
+  .catch(() => {
+    status.textContent = "CAMERA ERROR";
+    status.style.color = "#ff3b30";
+  });
+}
 
-// CAMERA SETUP (iPhone + Android)
-navigator.mediaDevices.getUserMedia({
-  video: {
-    facingMode: "environment",
-    width: { ideal: 1280 },
-    height: { ideal: 720 }
-  }
-})
-.then(stream => video.srcObject = stream)
-.catch(() => {
-  status.textContent = "CAMERA ERROR";
-  status.style.color = "#ff3b30";
-});
-
-// BARCODE SCAN (iPhone compatible)
+/* ---------------------------
+   BARCODE SCAN (ZBar only)
+----------------------------*/
 async function scanBarcode() {
   status.textContent = "SCANNING...";
   status.style.color = "#007aff";
 
-  const detector = ("BarcodeDetector" in window)
-    ? new BarcodeDetector({ formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e"] })
-    : null;
-
-  if (detector) {
-    try {
-      const result = await detector.detect(video);
-      if (result.length > 0) {
-        const code = result[0].rawValue;
-        updateLastRow(code);
-        status.textContent = "BARCODE: " + code;
-        status.style.color = "#34c759";
-        return;
-      }
-    } catch (e) {}
-  }
-
-  // FALLBACK: ZBAR WASM (iPhone Safari)
   if (!zbar) zbar = await ZBarWasm();
 
   const canvas = document.createElement("canvas");
@@ -132,7 +150,9 @@ async function scanBarcode() {
   }
 }
 
-// OCR fallback (your original)
+/* ---------------------------
+   OCR FALLBACK
+----------------------------*/
 async function captureText() {
   status.textContent = "SEARCHING...";
 
@@ -169,6 +189,9 @@ async function captureText() {
   }
 }
 
+/* ---------------------------
+   ROW MANAGEMENT
+----------------------------*/
 function updateLastRow(code) {
   const rows = document.querySelectorAll(".item-row");
   const last = rows[rows.length - 1];
@@ -189,6 +212,9 @@ function addNewRow(code = "") {
   document.getElementById("items-list").appendChild(div);
 }
 
+/* ---------------------------
+   EXPORT PNG
+----------------------------*/
 function saveAndReset() {
   const cust = document.getElementById("customer").value || "NO-NAME";
   const po = document.getElementById("po").value || "NO-PO";
