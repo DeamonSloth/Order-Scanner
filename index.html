@@ -5,9 +5,6 @@
 <title>Order Sheet Pro (iPhone Only)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 
-<!-- OCR fallback -->
-<script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
-
 <!-- ZBar WASM barcode scanner -->
 <script src="https://unpkg.com/@undecaf/zbar-wasm@0.9.14/dist/index.js"></script>
 
@@ -65,8 +62,7 @@
     <video id="v" autoplay playsinline muted></video>
   </div>
 
-  <button class="btn btn-scan" onclick="scanBarcode()">SCAN BARCODE</button>
-  <button class="btn btn-scan" style="background:#8e8e93" onclick="captureText()">READ 8‑DIGIT CODE</button>
+  <button class="btn btn-scan" onclick="startContinuousScan()">SCAN BARCODE</button>
 
   <div id="items-list">
     <div class="item-row">
@@ -100,6 +96,7 @@ if (!isIphone) {
 }
 
 let zbar = null;
+let scanning = false;
 const video = document.getElementById("v");
 const status = document.getElementById("status");
 
@@ -122,71 +119,49 @@ function startCamera() {
 }
 
 /* ---------------------------
-   BARCODE SCAN (ZBar only)
+   CONTINUOUS BARCODE SCAN
 ----------------------------*/
-async function scanBarcode() {
+async function startContinuousScan() {
+  if (scanning) return;
+
+  scanning = true;
   status.textContent = "SCANNING...";
   status.style.color = "#007aff";
 
   if (!zbar) zbar = await ZBarWasm();
 
+  // Wait for Safari to stabilize video
+  await new Promise(r => setTimeout(r, 600));
+
+  scanLoop();
+}
+
+async function scanLoop() {
+  if (!scanning) return;
+
   const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth * 2;   // Higher resolution for ZBar
+  canvas.height = video.videoHeight * 2;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
+
+  ctx.filter = "brightness(120%) contrast(140%)";
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const symbols = zbar.scanImageData(img);
 
   if (symbols.length > 0) {
     const code = symbols[0].decode();
+    scanning = false;
+
     updateLastRow(code);
     status.textContent = "BARCODE: " + code;
     status.style.color = "#34c759";
-  } else {
-    status.textContent = "NO BARCODE FOUND";
-    status.style.color = "#ff3b30";
+    return;
   }
-}
 
-/* ---------------------------
-   OCR FALLBACK
-----------------------------*/
-async function captureText() {
-  status.textContent = "SEARCHING...";
-
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-
-  canvas.width = 500;
-  canvas.height = 120;
-
-  ctx.filter = "grayscale(100%) contrast(180%) brightness(110%)";
-  ctx.drawImage(
-    video,
-    (video.videoWidth / 2) - 250,
-    (video.videoHeight / 2) - 60,
-    500,
-    120,
-    0,
-    0,
-    500,
-    120
-  );
-
-  const { data: { text } } = await Tesseract.recognize(canvas, "eng");
-  let raw = text.replace(/\s+/g, "").replace(/[^0-9-]/g, "");
-  let match = raw.match(/\d{4}-\d{4}/) || raw.match(/\d{8}/);
-
-  if (match) {
-    updateLastRow(match[0]);
-    status.textContent = "SUCCESS: " + match[0];
-    status.style.color = "#34c759";
-  } else {
-    status.textContent = "RE-TRY: ALIGN BOX";
-    status.style.color = "#ff3b30";
-  }
+  // Try again in 200ms
+  setTimeout(scanLoop, 200);
 }
 
 /* ---------------------------
